@@ -51,11 +51,11 @@ def read_motion(filename, rotate=True, alpha=None):
         for i in range(len(Acc)):
             while k < len(Rot) and k < len(Acc) and Acc[k][0] >= Rot[k][0]:
                 k = k + 1
-                av = np.array(Acc[i][1:])
-                # a = av.dot(Rot[k][1])
-                a = (Rot[k][1]).dot(av)
-                for j in range(1, 4):
-                    Acc[i][j] = a[0, j-1]
+            av = np.array(Acc[i][1:])
+            # a = av.dot(Rot[k][1])
+            a = (Rot[k][1]).dot(av)
+            for j in range(1, 4):
+                Acc[i][j] = a[0, j-1]
 
     if alpha:  # Exponentially fading filter
         for i in range(1, len(Acc)):
@@ -66,23 +66,25 @@ def read_motion(filename, rotate=True, alpha=None):
 
 
 def label(Acc, Points):
+    """Return a list of labels for the accelation vector list Acc by
+    looking for the closest entry in Points, which are assumed to be the
+    cluster centres."""
     Labels = [0 for _ in range(len(Acc))]
     for i in range(len(Acc)):
-        Q, dQ = None, 10.0
+        Q, dQ = None, sys.float_info.max
         for p in range(len(Points)):
             t = Acc[i][1:] - np.array(Points[p])
             d = np.sqrt(sum(t*t))
             if d < dQ:
                 Q, dQ = p, d
-        for j in range(1, 4):
-            Labels[i] = Q
+        Labels[i] = Q
     return Labels
 
 
-# filename = 'Tag2/csv/5-5-5-5.csv'
-# filename = 'Tag2/csv/circle_4sec.csv'
-filename = 'Tag2/csv/swingingLong.csv'
-# filename = 'Tag2/csv/swingingShort.csv'
+# filename = '/csv/5-5-5-5.csv'
+# filename = '/csv/circle_4sec.csv'
+filename = '/csv/swingingLong.csv'
+# filename = '/csv/swingingShort.csv'
 Acc = read_motion(filename)
 dfa = pandas.DataFrame(Acc, columns=['time', 'x', 'y', 'z'])
 seaborn.relplot(kind="line", data=dfa[["x", "y", "z"]])
