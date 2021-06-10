@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 # for 3D projection to work
 from mpl_toolkits.mplot3d import Axes3D
 
+import os
+
 import sys
 from sklearn.cluster import KMeans
 from hmmlearn import hmm
@@ -17,14 +19,19 @@ from sklearn.naive_bayes import MultinomialNB
 from get_rotation_matrix import getRotationMatrix
 
 # one file per sample of one gesture (removing beginning and end touching beforehand)
-Filenames = ['csv/5-5-5-5.csv']
+folderPath = "csv/wave-right/"
+Filenames = os.listdir(folderPath)
+for i in range(0, len(Filenames)):
+    Filenames[i] = folderPath + Filenames[i]
+print(Filenames)
 Alpha = 1.0/8.0
-Delta = 0.5
+Delta = 2
 Epsilon = 0.2
 Length = 40
 Clusters = 8
 States = 4
 
+np.random.seed(420)
 # from peakdetect import peakdetect
 
 
@@ -160,7 +167,7 @@ print(km.cluster_centers_)
 print()
 print("Fitting HMM")
 model = hmm.MultinomialHMM(n_components=States)
-Training = [label(Acc, km.cluster_centers_) for Acc in Data]
+Training = [shorten(label(Acc, km.cluster_centers_)) for Acc in Data]
 model.fit(np.concatenate(Training), [len(X) for X in Training])
 print("startprob = ", model.startprob_)
 print("transmat = ", model.transmat_)
@@ -204,15 +211,16 @@ labelseq = resample(label(Acc2, km.cluster_centers_), Length)
 stateseq = model.predict(labelseq)
 QAcc = (km.cluster_centers_[labelseq.reshape(1, -1)])[0]  # WTF?
 df = pandas.DataFrame(QAcc, columns=["ax", "ay", "az"])
-seaborn.relplot(kind="line", data=df)
+seaborn.relplot(kind="line", data=df).set(
+    title=filename + "quantized after filtering").tight_layout()
+
 df = pandas.DataFrame(list(zip(labelseq, stateseq)),
                       columns=["Label", "States"])
 seaborn.relplot(data=df).set(
     title=filename + " Staterepresentation").tight_layout()
+
 cls = clf.predict_proba(stateseq.reshape(1, -1))
 print(cls)
-plt.show()
-
 
 input("Press Enter to detect.")
 
@@ -230,5 +238,6 @@ cls = clf.predict_proba(stateseq.reshape(1, -1))
 print("Prediction of randomly generated state sequences. " +
       "The System is calculating the propability of being a gesture for each seq.", cls)
 
+plt.show()
 input("Press Enter to exit.")
 sys.exit(0)
