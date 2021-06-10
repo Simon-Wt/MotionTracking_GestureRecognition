@@ -114,8 +114,7 @@ def label(Acc, Points):
             d = np.sqrt(sum(t*t))
             if d < dQ:
                 Q, dQ = p, d
-        for j in range(1, 4):
-            Labels[i] = Q
+        Labels[i] = Q
     return np.array(Labels, dtype=np.int32).reshape(-1, 1)
 
 
@@ -172,7 +171,7 @@ Other = [np.random.randint(14, size=(1, Length)) for _ in range(20)]
 Waving = [model.predict(resample(t, Length)).reshape(1, -1) for t in Training]
 Stirring = [np.random.randint(14, size=(1, Length))]
 
-clf = MultinomialNB(alpha=1.0, fit_prior=False)
+clf = MultinomialNB(alpha=1.0, fit_prior=False)  # Naive Bayes
 Observations = np.concatenate(Other + Waving + Stirring)
 Targets = np.array([1 for _ in range(len(Other))] +
                    [2 for _ in range(len(Waving))] + [3 for _ in range(len(Stirring))])
@@ -180,20 +179,27 @@ clf.fit(Observations, Targets)
 
 input("Press Enter to demonstrate.")
 fig = plt.figure(1, figsize=(4, 3))
-ax = Axes3D(fig, elev=48, azim=134)
+ax = Axes3D(fig, elev=48, azim=134, auto_add_to_figure=False)
 ax.scatter(dfa["ax"], dfa["ay"], dfa["az"],
-           c=km.labels_.astype(np.float), edgecolor='k')
+           c=km.labels_.astype(float), edgecolor='k')
 fig.show()
 
+filename = Filenames[0]
 Acc2 = read_motion(Filenames[0], alpha=Alpha)
 df = pandas.DataFrame(Acc2, columns=["time", "ax", "ay", "az"])
-seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]])
+seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]]).set(
+    title=filename + " normal").tight_layout()
+
 idle_filter(Acc2, Delta)
 df = pandas.DataFrame(Acc2, columns=["time", "ax", "ay", "az"])
-seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]])
+seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]]).set(
+    title=filename + " w/  idle Filter").tight_layout()
+
 dir_equiv_filter(Acc2, Epsilon)
 df = pandas.DataFrame(Acc2, columns=["time", "ax", "ay", "az"])
-seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]])
+seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]]).set(
+    title=filename + " w/ idle Filter + dir equiv Filter").tight_layout()
+
 labelseq = resample(label(Acc2, km.cluster_centers_), Length)
 stateseq = model.predict(labelseq)
 QAcc = (km.cluster_centers_[labelseq.reshape(1, -1)])[0]  # WTF?
@@ -201,7 +207,8 @@ df = pandas.DataFrame(QAcc, columns=["ax", "ay", "az"])
 seaborn.relplot(kind="line", data=df)
 df = pandas.DataFrame(list(zip(labelseq, stateseq)),
                       columns=["Label", "States"])
-seaborn.relplot(data=df)
+seaborn.relplot(data=df).set(
+    title=filename + " Staterepresentation").tight_layout()
 cls = clf.predict_proba(stateseq.reshape(1, -1))
 print(cls)
 plt.show()
@@ -220,7 +227,8 @@ print(cls)
 # For most likely negative
 stateseq = np.random.randint(14, size=(1, Length))
 cls = clf.predict_proba(stateseq.reshape(1, -1))
-print(cls)
+print("Prediction of randomly generated state sequences. " +
+      "The System is calculating the propability of being a gesture for each seq.", cls)
 
 input("Press Enter to exit.")
 sys.exit(0)
