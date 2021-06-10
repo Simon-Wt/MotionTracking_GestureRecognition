@@ -14,122 +14,145 @@ import sys
 from sklearn.cluster import KMeans
 from hmmlearn import hmm
 from sklearn.naive_bayes import MultinomialNB
+from get_rotation_matrix import getRotationMatrix
 
-Filenames = [ '1557913740208.csv' ]
-Alpha=1.0/8.0
-Delta=0.5
-Epsilon=0.2
-Length=40
-Clusters=18
-States=24
+# one file per sample of one gesture (removing beginning and end touching beforehand)
+Filenames = ['csv/5-5-5-5.csv']
+Alpha = 1.0/8.0
+Delta = 0.5
+Epsilon = 0.2
+Length = 40
+Clusters = 8
+States = 4
 
 # from peakdetect import peakdetect
 
+
 def idle_filter(Acc, delta=0.5):
-	"""Set all vectors with an acceleration magnitude smaller than
-	delta to 0"""
-	for i in range(len(Acc)):
-		d = np.sqrt(sum(Acc[i][1:]*Acc[i][1:]))
-		if d < delta:
-			Acc[i][1:] = [0.0, 0.0, 0.0]
+    """Set all vectors with an acceleration magnitude smaller than
+    delta to 0"""
+    for i in range(len(Acc)):
+        d = np.sqrt(sum(Acc[i][1:]*Acc[i][1:]))
+        if d < delta:
+            Acc[i][1:] = [0.0, 0.0, 0.0]
+
 
 def dir_equiv_filter(Acc, epsilon=0.2):
-	"""If two consecutive vectors are less than epsilon apart,
-	treat them as equivalent"""
-	for i in range(1, len(Acc)):
-		equivalent = True
-		for j in range(1,4):
-			d = np.abs(Acc[i-1][j]-Acc[i][j])
-			if d >= epsilon:
-				equivalent = False
-				break
-		if equivalent:
-			Acc[i][1:] = Acc[i-1][1:]
+    """If two consecutive vectors are less than epsilon apart,
+    treat them as equivalent"""
+    for i in range(1, len(Acc)):
+        equivalent = True
+        for j in range(1, 4):
+            d = np.abs(Acc[i-1][j]-Acc[i][j])
+            if d >= epsilon:
+                equivalent = False
+                break
+        if equivalent:
+            Acc[i][1:] = Acc[i-1][1:]
 
 
 def read_motion(filename, rotate=True, alpha=1.0/12.0):
-	"""Read and preprocess the motion file.
-	
-	A simple moving average filter with window size N can be
-	approximated by an EMA with alpha=2/(N+1).
-	"""
-	Acc = list()
-	Rot = list()
+    """Read and preprocess the motion file.
 
-	# Read data
-	with open(filename) as csvfile:
-		csvreader = csv.reader(csvfile, delimiter=';')
-		for row in csvreader:
-			if row[1] == '2':
-				a = np.array([float(row[0]), float(row[2]), float(row[3]), float(row[4])])
-				Acc.append(a)
-			elif row[1] == '7':
-				m = np.matrix([[float(row[2]), float(row[3]), float(row[4])],
-							   [float(row[5]), float(row[6]), float(row[7])],
-							   [float(row[8]), float(row[9]), float(row[10])]])
-				Rot.append([float(row[0]), m])
-            
-	# Rotate acceleration vectors
-	if rotate:
-		k=0
-		for i in range(len(Acc)):
-			while k < len(Rot) and Acc[k][0] >= Rot[k][0]:
-				k = k + 1
-			av = np.array(Acc[i][1:])
-			# a = av.dot(Rot[k][1])
-			a = (Rot[k][1]).dot(av)
-			for j in range(1,4):
-				Acc[i][j] = a[0, j-1]
+    A simple moving average filter with window size N can be
+    approximated by an EMA with alpha=2/(N+1).
+    """
+    Acc = list()
+    Grav = list()
+    Mag = list()
+    Rot = list()
 
-	if alpha:# Exponentially fading filter
-		for i in range(1, len(Acc)):
-			ts = Acc[i][0] # remember timestamp, we do not want to filter it
-			Acc[i] = Acc[i] * alpha + Acc[i-1] * (1.0-alpha)
-			Acc[i][0] = ts
-	return Acc
+    # Read data
+    with open(filename) as csvfile:
+        csvreader = csv.reader(csvfile, delimiter=';')
+        for row in csvreader:
+            if row[1] == '2':
+                a = np.array([float(row[0]), float(row[2]),
+                             float(row[3]), float(row[4])])
+                Acc.append(a)
+            elif row[1] == '1':  # Gravity
+                g = np.array([float(row[0]), float(row[2]),
+                             float(row[3]), float(row[4])])
+                Grav.append(g)
+                if len(Mag) > 0:
+                    Rot.append(
+                        [float(row[0]), getRotationMatrix(Grav[-1], Mag[-1])])
+            elif row[1] == '4':  # Magnetic field
+                m = np.array([float(row[0]), float(row[2]),
+                             float(row[3]), float(row[4])])
+                Mag.append(m)
+                if len(Grav) > 0:
+                    Rot.append(
+                        [float(row[0]), getRotationMatrix(Grav[-1], Mag[-1])])
+
+    # Rotate acceleration vectors
+    if rotate:
+        k = 0
+        for i in range(len(Acc)):
+            while k < len(Rot) and Acc[k][0] >= Rot[k][0]:
+                k = k + 1
+            av = np.array(Acc[i][1:])
+            # a = av.dot(Rot[k][1])
+            a = (Rot[k][1]).dot(av)
+            for j in range(1, 4):
+                Acc[i][j] = a[0, j-1]
+
+    if alpha:  # Exponentially fading filter
+        for i in range(1, len(Acc)):
+            ts = Acc[i][0]  # remember timestamp, we do not want to filter it
+            Acc[i] = Acc[i] * alpha + Acc[i-1] * (1.0-alpha)
+            Acc[i][0] = ts
+    return Acc
+
 
 def label(Acc, Points):
-	Labels = [ 0 for _ in range(len(Acc))]
-	for i in range(len(Acc)):
-		Q, dQ = None, 10.0
-		for p in range(len(Points)):
-			t = Acc[i][1:] - np.array(Points[p])
-			d = np.sqrt(sum(t*t))
-			if d < dQ:
-				Q, dQ = p, d
-		for j in range(1,4):
-			Labels[i] = Q
-	return np.array(Labels, dtype=np.int32).reshape(-1, 1)
-	
+    Labels = [0 for _ in range(len(Acc))]
+    for i in range(len(Acc)):
+        Q, dQ = None, 10.0
+        for p in range(len(Points)):
+            t = Acc[i][1:] - np.array(Points[p])
+            d = np.sqrt(sum(t*t))
+            if d < dQ:
+                Q, dQ = p, d
+        for j in range(1, 4):
+            Labels[i] = Q
+    return np.array(Labels, dtype=np.int32).reshape(-1, 1)
+
+
 def shorten(Labels):
-	result = list()
-	for label in Labels:
-		if not result or result[-1] != label:
-			result.append(label)
-	return np.array(result, dtype=np.int32).reshape(-1, 1)
+    """Removes the duplicates"""
+    result = list()
+    for label in Labels:
+        if not result or result[-1] != label:
+            result.append(label)
+    return np.array(result, dtype=np.int32).reshape(-1, 1)
+
 
 def resample(Labels, Length):
-	"""Simple resampling of the Label list to target Length"""
-	result = [ 0 for _ in range(Length) ]
-	dist = float(len(Labels))/float(Length)
-	for k in range(Length):
-		result[k] = Labels[int(k * dist)]
-	return np.array(result, dtype=np.int32)
+    """Simple resampling of the Label list to target Length"""
+    result = [0 for _ in range(Length)]
+    dist = float(len(Labels))/float(Length)
+    for k in range(Length):
+        result[k] = Labels[int(k * dist)]
+    return np.array(result, dtype=np.int32)
+
 
 def make_multinomial(km):
-	"""The resampled labeled data or the discretized data may not be
-	following a multinomial distribution. Here, we try to fix it."""
-	pass
+    """The resampled labeled data or the discretized data may not be
+    following a multinomial distribution. Here, we try to fix it."""
+    pass
 
-Data = [ read_motion(filename, alpha=Alpha) for filename in Filenames ]
+
+Data = [read_motion(filename, alpha=Alpha) for filename in Filenames]
 dfa = pandas.DataFrame(Data[0], columns=['time', 'ax', 'ay', 'az'])
 seaborn.relplot(kind="line", data=dfa[["ax", "ay", "az"]])
 
 for Acc in Data:
-	idle_filter(Acc, Delta)
-	dir_equiv_filter(Acc, Epsilon)
+    idle_filter(Acc, Delta)
+    dir_equiv_filter(Acc, Epsilon)
 
-dfa = pandas.DataFrame(np.concatenate(Data), columns=['time', 'ax', 'ay', 'az'])
+dfa = pandas.DataFrame(np.concatenate(Data), columns=[
+                       'time', 'ax', 'ay', 'az'])
 
 km = KMeans(n_clusters=Clusters)
 km.fit(dfa[["ax", "ay", "az"]])
@@ -145,13 +168,14 @@ print("transmat = ", model.transmat_)
 print("emissionprob = ", model.emissionprob_)
 
 print("Fitting naive Bayes")
-Other = [ np.random.randint(14, size=(1, Length)) for _ in range(20) ]
-Waving = [ model.predict(resample(t, Length)).reshape(1, -1) for t in Training]
-Stirring = [ np.random.randint(14, size=(1, Length)) ]
+Other = [np.random.randint(14, size=(1, Length)) for _ in range(20)]
+Waving = [model.predict(resample(t, Length)).reshape(1, -1) for t in Training]
+Stirring = [np.random.randint(14, size=(1, Length))]
 
 clf = MultinomialNB(alpha=1.0, fit_prior=False)
 Observations = np.concatenate(Other + Waving + Stirring)
-Targets = np.array([1 for _ in range(len(Other))] + [2 for _ in range(len(Waving))] + [3 for _ in range(len(Stirring))])
+Targets = np.array([1 for _ in range(len(Other))] +
+                   [2 for _ in range(len(Waving))] + [3 for _ in range(len(Stirring))])
 clf.fit(Observations, Targets)
 
 input("Press Enter to demonstrate.")
@@ -172,10 +196,11 @@ df = pandas.DataFrame(Acc2, columns=["time", "ax", "ay", "az"])
 seaborn.relplot(kind="line", data=df[["ax", "ay", "az"]])
 labelseq = resample(label(Acc2, km.cluster_centers_), Length)
 stateseq = model.predict(labelseq)
-QAcc = (km.cluster_centers_[labelseq.reshape(1, -1)])[0] # WTF?
+QAcc = (km.cluster_centers_[labelseq.reshape(1, -1)])[0]  # WTF?
 df = pandas.DataFrame(QAcc, columns=["ax", "ay", "az"])
 seaborn.relplot(kind="line", data=df)
-df = pandas.DataFrame(list(zip(labelseq, stateseq)), columns=["Label", "States"])
+df = pandas.DataFrame(list(zip(labelseq, stateseq)),
+                      columns=["Label", "States"])
 seaborn.relplot(data=df)
 cls = clf.predict_proba(stateseq.reshape(1, -1))
 print(cls)
