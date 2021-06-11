@@ -19,17 +19,18 @@ from sklearn.naive_bayes import MultinomialNB
 from get_rotation_matrix import getRotationMatrix
 
 # one file per sample of one gesture (removing beginning and end touching beforehand)
-folderPath = "csv/wave-right/"
+folderPath = "csv/polish-left/"
 Filenames = os.listdir(folderPath)
 for i in range(0, len(Filenames)):
     Filenames[i] = folderPath + Filenames[i]
-print(Filenames)
+Filenames = ["csv/idle/idle_hand.csv"]
+print("Filenames:", Filenames)
 Alpha = 1.0/8.0
-Delta = 2
-Epsilon = 0.2
+Delta = 1.5
+Epsilon = 0.15
 Length = 40
-Clusters = 8
-States = 4
+Clusters = 14
+States = 8
 
 np.random.seed(420)
 # from peakdetect import peakdetect
@@ -96,7 +97,7 @@ def read_motion(filename, rotate=True, alpha=1.0/12.0):
     if rotate:
         k = 0
         for i in range(len(Acc)):
-            while k < len(Rot) and Acc[k][0] >= Rot[k][0]:
+            while k < len(Rot) and k < len(Acc) and Acc[k][0] >= Rot[k][0]:
                 k = k + 1
             av = np.array(Acc[i][1:])
             # a = av.dot(Rot[k][1])
@@ -163,11 +164,12 @@ dfa = pandas.DataFrame(np.concatenate(Data), columns=[
 km = KMeans(n_clusters=Clusters)
 km.fit(dfa[["ax", "ay", "az"]])
 
+print("Cluster Center:")
 print(km.cluster_centers_)
 print()
 print("Fitting HMM")
 model = hmm.MultinomialHMM(n_components=States)
-Training = [shorten(label(Acc, km.cluster_centers_)) for Acc in Data]
+Training = [label(Acc, km.cluster_centers_) for Acc in Data]
 model.fit(np.concatenate(Training), [len(X) for X in Training])
 print("startprob = ", model.startprob_)
 print("transmat = ", model.transmat_)
@@ -212,7 +214,7 @@ stateseq = model.predict(labelseq)
 QAcc = (km.cluster_centers_[labelseq.reshape(1, -1)])[0]  # WTF?
 df = pandas.DataFrame(QAcc, columns=["ax", "ay", "az"])
 seaborn.relplot(kind="line", data=df).set(
-    title=filename + "quantized after filtering").tight_layout()
+    title=filename + " quantized after filtering").tight_layout()
 
 df = pandas.DataFrame(list(zip(labelseq, stateseq)),
                       columns=["Label", "States"])
@@ -236,7 +238,8 @@ print(cls)
 stateseq = np.random.randint(14, size=(1, Length))
 cls = clf.predict_proba(stateseq.reshape(1, -1))
 print("Prediction of randomly generated state sequences. " +
-      "The System is calculating the propability of being a gesture for each seq.", cls)
+      "The System is calculating the propability of being a gesture for each seq.")
+print(cls)
 
 plt.show()
 input("Press Enter to exit.")
